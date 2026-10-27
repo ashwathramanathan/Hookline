@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hookline</title>
+<style>
+:root{--ink:#1d1f23;--mute:#666b73;--line:#dcdde0;--bg:#fff;--risk:#b8321f}
+@media(prefers-color-scheme:dark){:root{--ink:#e8e8e6;--mute:#9a9ea5;--line:#34363b;--bg:#17181a;--risk:#e2705c}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 "Helvetica Neue",Arial,sans-serif}
+main{max-width:680px;margin:0 auto;padding:56px 22px 80px}
+h1{font:600 34px/1 Georgia,"Times New Roman",serif;margin:0 0 10px;letter-spacing:-.5px}
+.sub{color:var(--mute);margin:0 0 36px;max-width:52ch}
+form{display:flex;gap:10px;flex-wrap:wrap}
+input[type=text]{flex:1 1 320px;padding:13px 14px;font:inherit;color:var(--ink);background:transparent;border:1px solid var(--ink);border-radius:2px}
+button{padding:13px 22px;font:inherit;font-weight:600;background:var(--ink);color:var(--bg);border:1px solid var(--ink);border-radius:2px;cursor:pointer}
+button:disabled{opacity:.5;cursor:wait}
+:focus-visible{outline:2px solid var(--risk);outline-offset:2px}
+label{display:flex;gap:8px;align-items:center;color:var(--mute);font-size:14px;margin-top:12px;width:100%}
+#out{margin-top:44px}
+.verdict{font:600 30px/1.1 Georgia,serif;margin:0}
+.host{color:var(--mute);font-size:14px;margin:6px 0 18px;word-break:break-all}
+.bar{height:6px;background:var(--line)}
+.bar i{display:block;height:100%;background:var(--risk)}
+.meta{display:flex;justify-content:space-between;color:var(--mute);font-size:14px;margin:8px 0 30px}
+h2{font:600 18px Georgia,serif;margin:30px 0 8px}
+ul{list-style:none;margin:0;padding:0}
+li{display:flex;justify-content:space-between;gap:20px;padding:14px 0;border-top:1px solid var(--line)}
+li:last-child{border-bottom:1px solid var(--line)}
+li b{display:block;font-weight:600}li span{color:var(--mute);font-size:15px}
+li em{font-style:normal;color:var(--risk);font-weight:600;white-space:nowrap}
+dl{display:grid;grid-template-columns:130px 1fr;gap:6px 12px;margin:0}dt{color:var(--mute)}dd{margin:0}
+.err{color:var(--risk)}.note{color:var(--mute);font-size:14px;margin-top:30px}
+</style>
+</head>
+<body>
+<main>
+<h1>Hookline</h1>
+<p class="sub">Paste a link before you click it. Hookline reads the address and the certificate and tells you what looks off.</p>
+<form id="f">
+<input type="text" id="u" placeholder="https://example.com/login" autocomplete="off" aria-label="URL to check" required>
+<button id="go">Check link</button>
+<label><input type="checkbox" id="live" checked> Also connect to the site to inspect its certificate</label>
+</form>
+<div id="out" aria-live="polite"></div>
+<p class="note">A low score is not a guarantee. Treat any link that asks for a password or payment with care, even if it passes.</p>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!==undefined)e.textContent=x;return e};
+$("f").addEventListener("submit",async ev=>{
+  ev.preventDefault();const out=$("out"),btn=$("go");
+  btn.disabled=true;btn.textContent="Checking…";out.replaceChildren();
+  try{
+    const r=await fetch("/api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({url:$("u").value,live:$("live").checked})});
+    const d=await r.json();
+    if(!r.ok){out.append(el("p","err",d.error));return}
+    out.append(el("p","verdict",d.verdict),el("p","host",d.host+(d.assumed_https?" (https assumed)":"")));
+    const bar=el("div","bar"),fill=el("i");fill.style.width=d.score+"%";bar.append(fill);
+    const meta=el("div","meta");meta.append(el("span","","Risk score "+d.score+" of 100"),el("span","",d.findings.length+" of "+d.checked+" checks flagged"));
+    out.append(bar,meta);
+    if(d.findings.length){
+      out.append(el("h2","","What we found"));const ul=el("ul");
+      d.findings.forEach(f=>{const li=el("li"),w=el("div");const b=el("b","",f.title);w.append(b,el("span","",f.detail));li.append(w,el("em","","+"+f.points));ul.append(li)});
+      out.append(ul);
+    }else out.append(el("p","","Nothing in the address stood out."));
+    if(d.cert){
+      out.append(el("h2","","Certificate"));const dl=el("dl");
+      [["Issued by",d.cert.issuer],["Age",d.cert.age_days+" days"],["Expires in",d.cert.days_left+" days"],["Protocol",d.cert.protocol]]
+        .forEach(([k,v])=>dl.append(el("dt","",k),el("dd","",v)));
+      out.append(dl);
+    }else if(d.cert_note)out.append(el("p","note",d.cert_note));
+  }catch(e){out.append(el("p","err","Couldn't reach the server. Is it running?"))}
+  finally{btn.disabled=false;btn.textContent="Check link"}
+});
+</script>
+</body>
+</html>
